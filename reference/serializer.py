@@ -1,10 +1,10 @@
 """EvalFrame -> target string. **The schema is LOCKED in this module.**
 
-Every consumer (E0 report / budget audit / eyeball smoke AND E1's training
-dataset) imports :func:`serialize_frame` from here so the target string is
-produced in exactly one place. Nothing is hand-copied.
+Every consumer (dataset audits, smoke tests, AND the training dataset)
+imports :func:`serialize_frame` from here so the target string is produced
+in exactly one place. Nothing is hand-copied. Keep this property in any port.
 
-Schema v1 (decision 2026-07-05) -- NO ``<nath>``, NO ``<facing>``.
+Schema v1 -- deliberately minimal (see the paper for what was dropped).
 
 ``<SPORTS_UNIFIED>`` is the ENCODER task prompt (WIDER convention), NOT part of
 the decoder target -- the target begins at ``<sport>`` (epoch-1 PRED is
@@ -16,10 +16,10 @@ expected to start ``</s><s><sport>``). The decoder target string is::
       </player>...
     <gdesc>{scene_description}</s>
 
-Rules (WIDER lessons, not negotiable):
+Rules (lessons from the WIDER-Attribute port, not negotiable):
 
   * fixed-slot categorical ``<team>`` -- always exactly one flag token, dirty
-    values -> ``<unknown>`` (see :func:`sports_tokens.team_flag_from_gt`).
+    values -> ``<unknown>`` (see :func:`grammar.team_flag_from_gt`).
   * OCR items are variable-length, **skip-if-absent**, sorted **largest quad
     first**, and capped at ``max_ocr_per_player``.
   * ``ocr_quads`` -- quad-supervision mode (the E1<->E1b ablation axis):
@@ -29,7 +29,7 @@ Rules (WIDER lessons, not negotiable):
         the emitted loc tokens are dropped.
       - ``"before_text"`` (E4, reserved): raises ``NotImplementedError`` for now.
   * ``qmark_policy`` -- ``'?'`` is a single UNRESOLVED-glyph marker, not a
-    bad-detection flag (see ``core/ocr_text.normalize_ocr_text``):
+    bad-detection flag (see ``normalize_ocr_text`` below):
       - ``"clean"`` (E1 default): repair -- strip boundary ``'?'`` runs, turn
         interior ``'?'`` runs into a space, drop only all-``'?'`` items.
       - ``"drop"``  (E1c ablation): remove the whole OCR item if it contains ``'?'``.
@@ -45,7 +45,7 @@ Rules (WIDER lessons, not negotiable):
     in the GT dict for later ablations; the serializer simply does not emit
     them.
 
-Sport & scene values are canonicalised via ``core.sport_vocab`` (free text
+Sport & scene values are canonicalised by the helpers below (free text
 after their opener, closed by canonicalisation).
 """
 
@@ -55,15 +55,11 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .coordinate_utils import loc_tokens_from_list
-from .constants import LOC_BINS
 
-from .sport_vocab import (
-    normalize_scene_label,
-    normalize_sport_label,
-)
-from .ocr_text import normalize_ocr_text
-from .sports_tokens import (
+from grammar import LOC_BINS
+
+
+from grammar import (
     BBOX_CLOSE,
     BBOX_OPEN,
     EOS_TOKEN,
@@ -80,6 +76,276 @@ from .sports_tokens import (
 # dataset-split I/O module). Only the fields used by serialization are needed.
 from dataclasses import dataclass as _dataclass
 from typing import Any as _Any, Dict as _Dict
+
+
+# ======================================================================
+# Inlined helpers (vocab canonicalization, OCR-text policy, quantization)
+# ======================================================================
+from grammar import SPORT_LABEL_ALIASES, VALID_SPORT_TYPES, VALID_SCENE_TYPES
+
+
+# ======================================================================
+"""Sport-type vocabulary helpers.
+
+Single source of truth re-exported from ``grammar.py``, plus a
+case-insensitive normalizer that maps unknown labels to ``"Other"``.
+"""
+
+
+from typing import Dict, Optional
+
+
+
+# SPORT_LABEL_ALIASES is defined ONCE in grammar.py (the single source of
+# truth) and imported here so canonicalization paths can never diverge. It maps
+# variant labels onto a kept major BEFORE the case-fold lookup, e.g.:
+#   "Ice Hockey"        -> "Hockey"    (Hockey family)
+#   "American Football" -> "Football"  (same gridiron sport, GT split the label)
+# Distinct-but-sparse / zero-sample labels (Australian Rules Football, Rugby,
+# Racing, Baseball) are NOT aliased; absent from VALID_SPORT_TYPES they fold to
+# "Other" through the fallback in normalize_sport_label.
+
+
+def normalize_sport_label(raw: Optional[str]) -> str:
+    """Map an arbitrary GT sport label to one of ``VALID_SPORT_TYPES``.
+
+    Resolution order:
+      1. Aliases in ``SPORT_LABEL_ALIASES`` (case-insensitive).
+      2. Case-insensitive exact match against ``VALID_SPORT_TYPES``.
+      3. Fallback to ``"Other"``.
+
+    The alias step lets us merge near-duplicate labels (e.g. "Ice Hockey"
+    -> "Hockey") without bloating ``VALID_SPORT_TYPES`` -- the model only
+    ever sees the canonical right-hand side, so the alias is invisible at
+    the token level.
+
+    Unknown / missing labels fall back to ``"Other"`` so we always emit a
+    well-formed ``<sport>{label}`` opener, even on legacy frames whose
+    GT didn't carry ``sport_type``.
+    """
+    s = (raw or "Other").strip()
+    folded = s.casefold()
+    if folded in SPORT_LABEL_ALIASES:
+        return SPORT_LABEL_ALIASES[folded]
+    case_fold = {x.casefold(): x for x in VALID_SPORT_TYPES}
+    return case_fold.get(folded, "Other")
+
+
+# =========================================================================
+# Scene-type vocabulary (sport & scene values canonicalized here, in the
+# same module, so serialization and vocabulary can never drift apart)
+# =========================================================================
+
+# Aliases applied BEFORE the case-fold lookup against VALID_SCENE_TYPES. Keys are
+# case-folded. These recover GT labels that are semantically one of the
+# VALID_SCENE_TYPES but whose raw string doesn't match (spacing/synonym), so they
+# are NOT silently dumped into "Other" (a dataset-audit finding: audit your
+# label tails before serializing, or aliasable labels bleed into "Other"). Anything
+# still unmatched (Player Shots, Non-In-Game, Post-Game, Handshake, Team Huddle,
+# Coin Toss, Stadium Shot, ...) falls through to "Other" via the fallback below.
+SCENE_LABEL_ALIASES: Dict[str, str] = {
+    # "Warm Ups" (space) is the same class as canonical "Warm-ups" (hyphen).
+    # ~281 frames in our corpus -- the single biggest label lost to the mismatch.
+    "warm ups": "Warm-ups",
+    "warmups": "Warm-ups",
+    # VALID "Player Arrivals" is defined as "athletes entering venue, tunnel
+    # walks, pre-game arrivals" -- both of these raw labels belong there.
+    "player entrance": "Player Arrivals",
+    "tunnel walk": "Player Arrivals",
+}
+
+
+def normalize_scene_label(raw: Optional[str]) -> str:
+    """Map an arbitrary GT scene label to one of ``VALID_SCENE_TYPES``.
+
+    Resolution order mirrors :func:`normalize_sport_label`:
+      1. Aliases in ``SCENE_LABEL_ALIASES`` (case-insensitive).
+      2. Case-insensitive exact match against ``VALID_SCENE_TYPES``.
+      3. Fallback to ``"Other"`` (the "scene tail -> Other" collapse).
+    """
+    s = (raw or "Other").strip()
+    folded = s.casefold()
+    if folded in SCENE_LABEL_ALIASES:
+        return SCENE_LABEL_ALIASES[folded]
+    case_fold = {x.casefold(): x for x in VALID_SCENE_TYPES}
+    return case_fold.get(folded, "Other")
+
+
+# =========================================================================
+# Sport merge mapping -- APPLIED (major-sports-only taxonomy).
+# VALID_SPORT_TYPES = {Soccer, Basketball, Football, Hockey, Tennis, Other};
+# the merges live in SPORT_LABEL_ALIASES (defined in grammar.py, the single
+# source of truth) and the rest fold to "Other".
+# =========================================================================
+
+SPORT_MERGE_PROPOSAL: Dict[str, object] = {
+    "applied_aliases": dict(SPORT_LABEL_ALIASES),  # defined in grammar.py
+    "valid_sport_types": list(VALID_SPORT_TYPES),
+    "decisions": {
+        # Ice Hockey folded into Hockey (label variant of the same family).
+        "hockey_family": {
+            "merge": ["Hockey", "Ice Hockey"],
+            "into": "Hockey",
+            "status": "applied",
+        },
+        # "Football" == gridiron / American football in this dataset (GT scene
+        # descriptions reference quarterbacks, linemen, NFL teams) and is DISTINCT
+        # from "Soccer" (association football). The sparse "American Football"
+        # label is the same sport -> merged into "Football".
+        "football_family": {
+            "soccer": {"label": "Soccer", "into": "Soccer", "status": "kept (major)"},
+            "gridiron": {
+                "merge": ["Football", "American Football"],
+                "into": "Football",
+                "status": "applied",
+            },
+        },
+        # Distinct-but-sparse / zero-sample sports -> fold to "Other" (not aliased;
+        # simply absent from VALID_SPORT_TYPES so the fallback catches them).
+        "folded_to_other": {
+            "labels": ["Australian Rules Football", "Rugby", "Racing", "Baseball"],
+            "reason": "too sparse to learn/measure (<=14 train) or zero samples",
+            "status": "applied via fallback",
+        },
+    },
+}
+
+SCENE_MERGE_PROPOSAL: Dict[str, object] = {
+    "applied_aliases": dict(SCENE_LABEL_ALIASES),
+    "proposed": {
+        "scene_tail_to_other": {
+            "rule": "Any scene label not in VALID_SCENE_TYPES -> 'Other'.",
+            "valid_scene_types": list(VALID_SCENE_TYPES),
+            "status": "applied via fallback",
+        },
+    },
+}
+
+
+__all__ = [
+    "VALID_SPORT_TYPES",
+    "VALID_SCENE_TYPES",
+    "SPORT_LABEL_ALIASES",
+    "SCENE_LABEL_ALIASES",
+    "normalize_sport_label",
+    "normalize_scene_label",
+    "SPORT_MERGE_PROPOSAL",
+    "SCENE_MERGE_PROPOSAL",
+]
+"""Canonical OCR-text normalization for the sports-unified schema.
+
+ONE shared definition on purpose: it is consumed by three layers that MUST agree
+on what "the OCR text" is --
+
+  * the serializer (``serializer.py``) -> the training target,
+  * the metric layer (``metrics.py`` + your eval entry point),
+  * any future split rebuilds.
+
+This shared helper is the only thing all three may import without creating an upward
+dependency, so the normalizer has exactly one home.
+
+Why we repair instead of drop
+=============================
+``'?'`` is the annotation pipeline's marker for a single UNRESOLVED glyph -- a
+character the OCR could not read confidently -- NOT a flag that the whole
+detection is garbage. Dropping the whole item (the old ``qmark_policy="drop"``)
+threw away ~32.5% of ALL OCR items (13,622 of 41,931), including ~3,235 that are
+actually clean jersey numbers with one unreadable neighbour (``"?9"`` clearly
+shows the ``9``). The ``clean`` policy repairs them:
+
+    * boundary ``'?'`` runs -> stripped              ("?9"->"9",  "Bau?"->"Bau")
+    * interior ``'?'`` runs -> a single SPACE         ("1?3"->"1 3", "TU?K"->"TU K")
+      NEVER deleted: deleting fabricates a confident-but-wrong jersey ("1?3"->"13");
+      a space keeps it out of the digit-only jersey metric (honest partial read).
+    * all-``'?'`` / empty   -> ``""``                 (caller drops the item; 9 exist)
+    * surrounding / repeated whitespace -> collapsed.
+
+The example table in :data:`_EXPECTED` below doubles as the unit test (run this
+module as ``__main__`` for the self-check).
+"""
+
+
+import re
+
+_QMARK_RUN = re.compile(r"\?+")
+_WS_RUN = re.compile(r"\s+")
+
+
+def normalize_ocr_text(text: str) -> str:
+    """``'?'`` = unresolved glyph, not a bad detection. See the module docstring.
+
+    "?9"->"9"  "?NEY"->"NEY"  "Bau?"->"Bau"  "1?3"->"1 3"  "TU?K"->"TU K"
+    "9?3?"->"9 3"  "??"->""  "Estrella Galicia 0,0"->unchanged
+    """
+    t = (text or "").strip().strip("?").strip()  # boundary '?' runs + whitespace
+    t = _QMARK_RUN.sub(" ", t)                     # interior '?' runs -> single space
+    return _WS_RUN.sub(" ", t).strip()             # collapse whitespace
+
+
+# The docstring example table, machine-checkable (mirrors normalize_ocr_text's
+# docstring). Extend both together.
+_EXPECTED = {
+    "?9": "9",
+    "?NEY": "NEY",
+    "Bau?": "Bau",
+    "1?3": "1 3",
+    "TU?K": "TU K",
+    "9?3?": "9 3",
+    "CC?": "CC",
+    "?CM": "CM",
+    "??": "",
+    "": "",
+    "Estrella Galicia 0,0": "Estrella Galicia 0,0",
+}
+
+
+def _self_check() -> bool:
+    """Print + verify the example table; return True iff every case matches."""
+    ok = True
+    print("normalize_ocr_text unit table:")
+    for raw, exp in _EXPECTED.items():
+        got = normalize_ocr_text(raw)
+        good = got == exp
+        ok = ok and good
+        print(f"  [{'ok' if good else 'FAIL'}] {raw!r:26s} -> {got!r:16s} (expected {exp!r})")
+    print(f"  ALL {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
+__all__ = ["normalize_ocr_text"]
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(0 if _self_check() else 1)
+"""Coordinate quantization helpers (public re-implementation).
+
+Internally these live in a shared production utility module; the public
+version reproduces the exact behaviour used by the paper: normalized
+[0, 1] coordinates are quantized to ``loc_bins`` bins and rendered as
+``<loc_i>`` tokens (paper Sec. 3.1).
+"""
+
+
+from typing import Sequence
+
+
+def quantize_coord(value: float, loc_bins: int) -> int:
+    """Quantize a normalized coordinate in [0, 1] to a bin index in
+    [0, loc_bins - 1], clamping out-of-range inputs."""
+    v = min(max(float(value), 0.0), 1.0)
+    return min(int(v * loc_bins), loc_bins - 1)
+
+
+def loc_tokens_from_list(coords: Sequence[float], loc_bins: int) -> str:
+    """Render a flat list of normalized coordinates as concatenated
+    ``<loc_i>`` tokens, e.g. ``[0.1, 0.2] -> "<loc_100><loc_200>"``."""
+    return "".join(f"<loc_{quantize_coord(c, loc_bins)}>" for c in coords)
+
+# ======================================================================
+# Serialization
+# ======================================================================
 
 
 @_dataclass
@@ -117,7 +383,8 @@ _SENTENCE_RE = re.compile(r"[^.!?]*[.!?]|[^.!?]+$")
 
 
 # =========================================================================
-# Caps -- populated from e0_out/schema_caps.json by budget_audit; ``None``
+# Caps -- set from YOUR dataset audit (observed maxima, verified non-binding;
+# the paper's corpus used max_players=12, max_ocr_per_player=17). ``None``
 # means "no cap" (used while auditing the raw distribution).
 # =========================================================================
 
@@ -449,7 +716,6 @@ __all__ = [
     "SchemaCaps",
     "SerializedFrame",
     "serialize_frame",
-    # Re-exported from core so existing ``from serializer import ...`` sites keep
-    # working; the canonical home is ``core/ocr_text.py``.
+    # Canonical home of OCR-text normalization in this release.
     "normalize_ocr_text",
 ]

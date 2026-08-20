@@ -1,12 +1,12 @@
 """Parse / validate the sports-unified generated string.
 
-Inverse of ``experiments/e0_data_prep/serializer.py``: turns a decoded
+Inverse of ``serializer.py``: turns a decoded
 (``skip_special_tokens=False``) target string back into a structured dict with
 the same shape as the ground-truth ``players`` list, so the eval metrics can
 compare PRED vs GT symmetrically.
 
-Loc bins invert via ``coord = bin / (LOC_BINS - 1)`` (the ``to_bin`` rounding
-in ``coordinate_utils``).
+Loc bins invert via ``coord = bin / (LOC_BINS - 1)`` (matching the ``to_bin``
+rounding in ``serializer.py``).
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
-from .constants import LOC_BINS
+from grammar import LOC_BINS
 
-from .sports_tokens import (
+from grammar import (
     FLAG_TO_GT_TEAM,
     TEAM_A,
     TEAM_B,

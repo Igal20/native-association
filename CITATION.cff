@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite the paper below."
+title: "Native Association: Confidence-Aware Human Perception in the Wild with a Foundation VLM"
+authors:
+  - family-names: Dmitriev
+    given-names: Igal
+    affiliation: WSC Sports
+  - family-names: Liba
+    given-names: Ofir
+    affiliation: WSC Sports
+repository-code: "https://github.com/Igal20/native-association"
+url: "https://openreview.net/forum?id=ZYKiyXfSy8"
+license: MIT
+preferred-citation:
+  type: conference-paper
+  title: "Native Association: Confidence-Aware Human Perception in the Wild with a Foundation VLM"
+  authors:
+    - family-names: Dmitriev
+      given-names: Igal
+    - family-names: Liba
+      given-names: Ofir
+  collection-title: "ECCV Workshops (Human-Centered Multimodal Intelligence in the Wild)"
+  year: 2026

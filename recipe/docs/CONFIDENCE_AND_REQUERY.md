@@ -14,15 +14,24 @@ c(F) = exp( (1/k) · Σ_i log P(y_ti | y_<ti, X) )        # Eq. 1 — geometric 
 
 Reference implementation: `reference/confidence_replay.py`.
 
+![Confidence-gated flow: generate under the grammar, replay unmasked, gate per field](../../assets/confidence_gate.png)
+
+
 **Aggregator choice is a non-issue for short fields** — measured: geometric mean, arithmetic mean and min-probability coincide to three decimals over 952 jersey reads (fields of 1–2 BPE tokens are aggregator-invariant by definition). Keep Eq. 1 as the general form; it matters only for longer text fields.
 
 ## What the confidence is good for — and what it is NOT
+
+![Reject option: ranking by field confidence takes jersey precision 0.71 to 0.96 at half coverage](../../assets/abstention.png)
+
 
 - **Reject option.** Rank predictions by field confidence, abstain on the least confident: jersey precision 0.71 (full coverage) → 0.87 (top 70%) → **0.96** (top half); AUROC 0.879. This relies only on the *ordering*, not calibration.
 - **Calibration caveat.** The raw likelihood is over-confident (ECE 0.12–0.15 on sports). One temperature fixes it if you need absolute probabilities. (On WIDER after fusion it was calibrated out of the box, ECE 0.028 — domain-dependent.)
 - **Negative results, so you don't rediscover them:** the structural `loc_conf` (geomean over box loc tokens; AUROC ≈ 0.51) and the objectness margin are near-random *correctness* predictors on both domains. They are routers, not filters — useful only to decide WHERE to re-query.
 
 ## The training-free crop re-query
+
+![Crop re-query: small or uncertain entities are re-queried on padded crops under the same grammar, capped at one entity](../../assets/requery_schematic.png)
+
 
 Small entities are the dominant error mode, and it is a *resolution* bound, not a knowledge bound (a distant jersey spans 3–4 of the 1000 coordinate bins).
 

@@ -27,6 +27,9 @@ The `?`-policy: our annotators mark unreadable characters with `?`. Choose one o
 
 ## 2. The finite-state grammar
 
+![Coordinate quantization: continuous coordinates to loc-bin tokens — a distant jersey spans only 3-4 of the 1000 bins](../../assets/quantization.png)
+
+
 Constrained decoding via a `prefix_allowed_tokens_fn` passed to `generate()`: at each step, compute the set of legal next tokens from the current state; every illegal token gets probability zero.
 
 States and transitions (see `reference/grammar.py` for the executable version):

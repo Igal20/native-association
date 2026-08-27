@@ -26,6 +26,9 @@ Results (test: 6,918 images, 29,177 person instances):
 
 The phenomenology replicated too: tuning null (+0.02 mAP), usable confidence (error 4.1% → 1.5% at 10% abstention; ECE 0.028 after fusion), structural signals route-not-filter. Scope it honestly: WIDER's protocol tests the *recipe's generality*, not the text–entity association claim itself.
 
+
+![WIDER-Attribute qualitative grid: the same recipe, 14 binary attributes per person](../../assets/wider_qual_grid.png)
+
 ### The WIDER checkpoint
 
 **The fine-tuned WIDER-Attribute checkpoint will be released via this repository** (watch the Releases page). With it, the given-box and end-to-end numbers above are reproducible from public data end-to-end: WIDER images + this checkpoint + `reference/grammar.py` decoding + `reference/metrics.py` scoring.

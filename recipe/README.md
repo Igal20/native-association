@@ -4,6 +4,9 @@
 
 This is a **recipe release, not a code release**. The five files in [`reference/`](../reference/) are working reference implementations of the parts that are easy to get subtly wrong; everything else is prose written so that you — or your coding assistant — can scaffold runnable training and inference scripts for *your* dataset.
 
+
+![System overview: one model, one grammar-constrained pass, per-field confidence, optional crop re-query](../assets/system_overview.png)
+
 ## Why you'd want this
 
 If your pipeline today is *detector → OCR/classifiers → IoU stitching*, then under occlusion the stitch attaches correctly-read attributes to the wrong entity. On our benchmark, cascades granted **ground-truth boxes and one crop per athlete** still misbind 15–18% of the jersey digits they read. Prompted frontier APIs are worse: 90–97% of their misbindings are reads grounded to no entity at all. The recipe removes the failing joint instead of improving its parts.
@@ -17,6 +20,9 @@ Three guarantees, one mechanism each:
 | Visual grounding (small entities) | confidence-routed crop re-query | tiny-bucket jersey F1 **0.61 → 0.75** |
 
 And the finding that shapes the whole recipe: once the grammar is learned, **further parameter-efficient tuning showed no measurable gain under the configurations we tested** (LoRA ladder to 3.15M params: < +0.0011). The gains live in the structure. Spend your effort on the schema, not on adapters.
+
+
+![The recipe ports across worlds: the same procedure re-instantiated on sports broadcast and WIDER-Attribute](../assets/recipe_two_worlds.png)
 
 ## The workflow (same philosophy as [florence2-unified-perception](https://github.com/Igal20/florence2-unified-perception))
 

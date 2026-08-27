@@ -14,7 +14,7 @@ This is a **recipe, not a code release** — the same philosophy as [florence2-u
 | **Read the exact reference implementations** (grammar, serializer, parser, confidence replay, metrics) | [`reference/`](reference/) — 5 files, public deps only |
 | **Read the paper / supplementary / poster** | [`paper/`](paper/) |
 | **Re-run the API baselines with the exact prompt** | [`prompts/gemini_prompt_eccv_v1.md`](prompts/gemini_prompt_eccv_v1.md) |
-| **Reproduce the public-benchmark numbers** | WIDER-Attribute checkpoint — **to be released on this repo's Releases page**; see [`docs/REPRODUCING.md`](docs/REPRODUCING.md) |
+| **Reproduce the public-benchmark numbers** | **[WIDER-Attribute checkpoint on Hugging Face](https://huggingface.co/Igal20/native-association-wider-florence2)**; see [`docs/REPRODUCING.md`](docs/REPRODUCING.md) |
 
 ## The recipe in one table
 
@@ -40,7 +40,7 @@ On a frozen 567-frame multi-sport test the single pass reaches **0.95 detection 
 
 ## Release scope
 
-The sports corpus and sports checkpoint are proprietary (WSC Sports production data) and are **not** released. Released here: the complete methodology, the five reference implementations, the verbatim baseline prompts, the paper artifacts — and, incoming, the **WIDER-Attribute checkpoint**, which makes the public-benchmark results reproducible end-to-end. Status per artifact: [`docs/REPRODUCING.md`](docs/REPRODUCING.md).
+The sports corpus and sports checkpoint are proprietary (WSC Sports production data) and are **not** released. Released here: the complete methodology, the five reference implementations, the verbatim baseline prompts, the paper artifacts — and the **[WIDER-Attribute checkpoint](https://huggingface.co/Igal20/native-association-wider-florence2)** (Hugging Face), which makes the public-benchmark results reproducible end-to-end. Status per artifact: [`docs/REPRODUCING.md`](docs/REPRODUCING.md).
 
 ## Citation
 

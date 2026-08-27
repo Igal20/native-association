@@ -11,7 +11,7 @@ and where each paper claim is carried in this repo.
 | Per-field confidence recipe (Eq. 1, unmasked replay) | **Released** | `reference/confidence_replay.py` (+ `recipe/docs/CONFIDENCE_AND_REQUERY.md`) |
 | Training recipe | **Released (prose)** | `recipe/docs/TRAINING.md` — written to be scaffolded into a runnable script by a coding assistant |
 | Verbatim API prompts + retry policy | **Released** | `prompts/gemini_prompt_eccv_v1.md` |
-| **WIDER-Attribute checkpoint** | **To be released on this repo's Releases page** | with it: WIDER given-box (93.1 mAP) and end-to-end (84.5 mAP) reproduce from public data |
+| **WIDER-Attribute checkpoint** | **[Released on Hugging Face](https://huggingface.co/Igal20/native-association-wider-florence2)** | WIDER given-box (93.1 mAP) and end-to-end (84.5 mAP) reproduce from public data |
 | Per-system sports prediction caches (re-scorable) | Being prepared | — |
 | Sports corpus + sports checkpoint | **Not released** (proprietary) | see paper Sec. 4 |
 

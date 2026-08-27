@@ -31,7 +31,7 @@ The phenomenology replicated too: tuning null (+0.02 mAP), usable confidence (er
 
 ### The WIDER checkpoint
 
-**The fine-tuned WIDER-Attribute checkpoint will be released via this repository** (watch the Releases page). With it, the given-box and end-to-end numbers above are reproducible from public data end-to-end: WIDER images + this checkpoint + `reference/grammar.py` decoding + `reference/metrics.py` scoring.
+**The fine-tuned WIDER-Attribute checkpoint is released on Hugging Face: [Igal20/native-association-wider-florence2](https://huggingface.co/Igal20/native-association-wider-florence2)** (weights + tokenizer + a model card with the exact loading snippet, including the `lm_head.pth` overlay). With it, the given-box and end-to-end numbers above are reproducible from public data end-to-end: WIDER images + this checkpoint + `reference/grammar.py` decoding + `reference/metrics.py` scoring.
 
 ## The honesty checklist (ships with every port)
 
